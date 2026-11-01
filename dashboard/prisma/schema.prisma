@@ -1,0 +1,369 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ProgrammeLevel {
+  UG
+  PG
+}
+
+enum CombinedMarkRule {
+  SUM
+  AVERAGE
+}
+
+enum RecordStatus {
+  DRAFT
+  RELEASED
+  SUPERSEDED
+}
+
+enum AttendanceKind {
+  GOOGLE_SHEET
+  EXCEL
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  EXCUSED
+  UNRECORDED
+}
+
+enum WorkStatus {
+  DECLARED
+  VERIFIED
+  RETURNED
+}
+
+enum ThreadStatus {
+  OPEN
+  REPLIED
+  CLOSED
+}
+
+enum EventKind {
+  SESSIONAL
+  ASSIGNMENT
+  QUIZ
+  DEPARTMENT
+}
+
+model Department {
+  id         String      @id @default(cuid())
+  code       String      @unique
+  name       String
+  programmes Programme[]
+  teachers   Teacher[]
+  hod        HOD?
+  events     CalendarEvent[]
+}
+
+model Programme {
+  id           String         @id @default(cuid())
+  code         String         @unique
+  name         String
+  level        ProgrammeLevel
+  departmentId String
+  department   Department     @relation(fields: [departmentId], references: [id])
+  subjects     Subject[]
+  students     Student[]
+  terms        Term[]
+}
+
+model Term {
+  id          String       @id @default(cuid())
+  label       String
+  startsOn    DateTime     @db.Date
+  endsOn      DateTime     @db.Date
+  programmeId String
+  programme   Programme    @relation(fields: [programmeId], references: [id])
+  enrolments  Enrolment[]
+  teaching    TeachingAssignment[]
+  marks       Mark[]
+  attendance  AttendanceRecord[]
+  quizzes     Quiz[]
+  events      CalendarEvent[]
+
+  @@unique([programmeId, label])
+}
+
+model Subject {
+  id             String             @id @default(cuid())
+  code           String
+  name           String
+  programmeId    String
+  programme      Programme          @relation(fields: [programmeId], references: [id])
+  combinedRule   CombinedMarkRule   @default(SUM)
+  sessionalMax   Int                @default(30)
+  enrolments     Enrolment[]
+  teaching       TeachingAssignment[]
+  marks          Mark[]
+  attendance     AttendanceRecord[]
+  quizzes        Quiz[]
+  questions      QuestionThread[]
+  events         CalendarEvent[]
+
+  @@unique([programmeId, code])
+}
+
+model Student {
+  id             String             @id @default(cuid())
+  authUserId     String             @unique
+  facultyNo      String             @unique
+  enrolmentNo    String             @unique
+  name           String
+  programmeId    String
+  programme      Programme          @relation(fields: [programmeId], references: [id])
+  highSchool     String?
+  intermediate   String?
+  bachelors      String?
+  interests      String[]           @default([])
+  enrolments     Enrolment[]
+  marks          Mark[]
+  attendance     AttendanceRecord[]
+  attempts       QuizAttempt[]
+  work           StudentWork[]
+  questions      QuestionThread[]
+  notices        Notification[]
+  createdAt      DateTime           @default(now())
+}
+
+model Teacher {
+  id          String               @id @default(cuid())
+  authUserId  String               @unique
+  name        String
+  departmentId String
+  department  Department           @relation(fields: [departmentId], references: [id])
+  assignments TeachingAssignment[]
+  quizzes     Quiz[]
+  questions   QuestionThread[]
+  verifiedWork StudentWork[]
+}
+
+model HOD {
+  id           String     @id @default(cuid())
+  authUserId   String     @unique
+  name         String
+  departmentId String     @unique
+  department   Department @relation(fields: [departmentId], references: [id])
+}
+
+model Admin {
+  id         String @id @default(cuid())
+  authUserId String @unique
+  name       String
+}
+
+// Relational mapping of enrolment and Teacher-Subject-Student teaching scope.
+// These are implementation tables, not extra conceptual ER entities.
+model Enrolment {
+  id        String   @id @default(cuid())
+  studentId String
+  subjectId String
+  termId    String
+  section   String
+  student   Student  @relation(fields: [studentId], references: [id])
+  subject   Subject  @relation(fields: [subjectId], references: [id])
+  term      Term     @relation(fields: [termId], references: [id])
+
+  @@unique([studentId, subjectId, termId])
+  @@index([subjectId, termId, section])
+}
+
+model TeachingAssignment {
+  id           String           @id @default(cuid())
+  teacherId    String
+  subjectId    String
+  termId       String
+  section      String
+  teacher      Teacher          @relation(fields: [teacherId], references: [id])
+  subject      Subject          @relation(fields: [subjectId], references: [id])
+  term         Term             @relation(fields: [termId], references: [id])
+  sources      AttendanceSource[]
+  imports      ImportBatch[]
+
+  @@unique([teacherId, subjectId, termId, section])
+  @@index([subjectId, termId, section])
+}
+
+model ImportBatch {
+  id           String             @id @default(cuid())
+  assignmentId String
+  assignment   TeachingAssignment @relation(fields: [assignmentId], references: [id])
+  kind         String
+  sourceName   String
+  actorAuthId  String
+  status       RecordStatus       @default(DRAFT)
+  version      Int
+  summary      Json
+  createdAt    DateTime           @default(now())
+  releasedAt   DateTime?
+  marks        Mark[]
+  attendance   AttendanceRecord[]
+
+  @@unique([assignmentId, kind, version])
+}
+
+model Mark {
+  id            String       @id @default(cuid())
+  studentId     String
+  subjectId     String
+  termId        String
+  sessional1    Int?
+  sessional2    Int?
+  importedTotal Int?
+  status        RecordStatus @default(DRAFT)
+  version       Int
+  batchId       String?
+  releasedAt    DateTime?
+  student       Student      @relation(fields: [studentId], references: [id])
+  subject       Subject      @relation(fields: [subjectId], references: [id])
+  term          Term         @relation(fields: [termId], references: [id])
+  batch         ImportBatch? @relation(fields: [batchId], references: [id])
+  updatedAt     DateTime     @updatedAt
+
+  @@unique([studentId, subjectId, termId, version])
+  @@index([subjectId, termId, status])
+}
+
+model AttendanceSource {
+  id           String             @id @default(cuid())
+  assignmentId String
+  kind         AttendanceKind
+  active       Boolean            @default(true)
+  sheetId      String?
+  sheetTab     String?
+  lastSuccess  DateTime?
+  lastError    String?
+  assignment   TeachingAssignment @relation(fields: [assignmentId], references: [id])
+  records      AttendanceRecord[]
+
+  @@index([assignmentId, active])
+}
+
+model AttendanceRecord {
+  id        String           @id @default(cuid())
+  studentId String
+  subjectId String
+  termId    String
+  sessionOn DateTime         @db.Date
+  status    AttendanceStatus
+  recordStatus RecordStatus @default(DRAFT)
+  releasedAt DateTime?
+  version   Int
+  batchId   String?
+  sourceId  String
+  student   Student          @relation(fields: [studentId], references: [id])
+  subject   Subject          @relation(fields: [subjectId], references: [id])
+  term      Term             @relation(fields: [termId], references: [id])
+  source    AttendanceSource @relation(fields: [sourceId], references: [id])
+  batch     ImportBatch?      @relation(fields: [batchId], references: [id])
+  updatedAt DateTime         @updatedAt
+
+  @@unique([studentId, subjectId, termId, sessionOn, version])
+  @@index([subjectId, termId, sessionOn])
+  @@index([studentId, recordStatus])
+}
+
+model Quiz {
+  id           String        @id @default(cuid())
+  subjectId    String
+  termId       String
+  teacherId    String
+  title        String
+  timerSeconds Int
+  questions    Json
+  publishedAt  DateTime?
+  subject      Subject       @relation(fields: [subjectId], references: [id])
+  term         Term          @relation(fields: [termId], references: [id])
+  teacher      Teacher       @relation(fields: [teacherId], references: [id])
+  attempts     QuizAttempt[]
+}
+
+model QuizAttempt {
+  id          String    @id @default(cuid())
+  quizId      String
+  studentId   String
+  startedAt   DateTime  @default(now())
+  submittedAt DateTime?
+  answers     Json?
+  score       Int?
+  quiz        Quiz      @relation(fields: [quizId], references: [id])
+  student     Student   @relation(fields: [studentId], references: [id])
+
+  @@index([quizId, studentId])
+}
+
+model StudentWork {
+  id                String     @id @default(cuid())
+  studentId         String
+  title             String
+  kind              String
+  description       String?
+  url               String?
+  storagePath       String?
+  status            WorkStatus @default(DECLARED)
+  verifiedById      String?
+  student           Student    @relation(fields: [studentId], references: [id])
+  verifiedBy        Teacher?   @relation(fields: [verifiedById], references: [id])
+  updatedAt         DateTime   @updatedAt
+}
+
+model QuestionThread {
+  id        String            @id @default(cuid())
+  studentId String
+  teacherId String
+  subjectId String
+  title     String
+  status    ThreadStatus      @default(OPEN)
+  student   Student           @relation(fields: [studentId], references: [id])
+  teacher   Teacher           @relation(fields: [teacherId], references: [id])
+  subject   Subject           @relation(fields: [subjectId], references: [id])
+  messages  QuestionMessage[]
+  createdAt DateTime          @default(now())
+}
+
+model QuestionMessage {
+  id           String         @id @default(cuid())
+  threadId     String
+  authorAuthId String
+  body         String
+  createdAt    DateTime       @default(now())
+  thread       QuestionThread @relation(fields: [threadId], references: [id])
+}
+
+model CalendarEvent {
+  id              String       @id @default(cuid())
+  title           String
+  kind            EventKind
+  startsAt        DateTime
+  endsAt          DateTime?
+  createdByAuthId String
+  departmentId    String?
+  subjectId       String?
+  termId          String?
+  department      Department?  @relation(fields: [departmentId], references: [id])
+  subject         Subject?     @relation(fields: [subjectId], references: [id])
+  term            Term?        @relation(fields: [termId], references: [id])
+  notices         Notification[]
+  createdAt       DateTime     @default(now())
+}
+
+model Notification {
+  id        String        @id @default(cuid())
+  studentId String
+  eventId   String?
+  type      String
+  message   String
+  dedupeKey String        @unique
+  readAt    DateTime?
+  createdAt DateTime      @default(now())
+  student   Student       @relation(fields: [studentId], references: [id])
+  event     CalendarEvent? @relation(fields: [eventId], references: [id])
+}
