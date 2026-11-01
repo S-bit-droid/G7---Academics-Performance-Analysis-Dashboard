@@ -11,7 +11,8 @@
     "test": "tsx --test tests/*.test.ts",
     "db:validate": "prisma validate",
     "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate deploy"
+    "db:migrate": "prisma migrate deploy",
+    "demo:bootstrap": "tsx scripts/bootstrap-demo.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.1",
