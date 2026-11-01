@@ -24,6 +24,8 @@ Without Supabase values, the public page and setup state still load. No academic
 
 The bootstrap reads `.env.local` locally and does not send its secrets to Vercel or GitHub. In Vercel, the app needs `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` and `DATABASE_URL` for login and role views; add `DATABASE_URL` separately if the Supabase integration supplied only `POSTGRES_*` names, then redeploy. `SUPABASE_SECRET_KEY` and the `DEMO_*` passwords are **not** Vercel variables. In Supabase Auth settings, disable public sign-up. The second migration enables RLS on every dashboard table with no Data API policies; all academic reads and writes use server-side Prisma. Keep RLS enabled for new tables too.
 
+If a Vercel runtime log reports Prisma `P1011` and `self-signed certificate in certificate chain`, download the certificate from **Supabase > Database Settings > SSL Configuration > Download Certificate**. Add its full PEM text as the server-only Vercel Production variable `SUPABASE_DB_CA_CERT`, then deploy the current code. The Prisma adapter verifies that CA and the pooler hostname. Keep the original pooled `DATABASE_URL`; the adapter handles URL SSL options when a CA is supplied. Never disable TLS verification to work around this error.
+
 ## Checks and delivery
 
 Run `npm.cmd run db:validate`, `npm.cmd run db:generate`, `npm.cmd run test`, `npm.cmd run lint`, `npm.cmd run typecheck` and `npm.cmd run build`. The root [GitHub Actions workflow](../.github/workflows/dashboard-ci.yml) runs these on pull requests and pushes to `main`.

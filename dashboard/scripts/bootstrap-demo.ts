@@ -4,6 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { createClient } from "@supabase/supabase-js";
+import { databaseConnection } from "../src/lib/db-connection";
 import { demoRoles, readDemoConfig, type DemoRole } from "./demo-config";
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -46,7 +47,9 @@ async function main() {
   runNpm("db:migrate");
   runNpm("db:generate");
   const { PrismaClient } = await import("../src/generated/prisma/client");
-  const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: config.databaseUrl }) });
+  const db = new PrismaClient({
+    adapter: new PrismaPg(databaseConnection(config.databaseUrl, process.env.SUPABASE_DB_CA_CERT)),
+  });
 
   try {
     const adminClient = createClient(config.supabaseUrl, config.secretKey, {
