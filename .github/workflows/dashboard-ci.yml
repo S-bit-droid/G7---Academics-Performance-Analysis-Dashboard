@@ -2,14 +2,8 @@ name: Dashboard CI
 
 on:
   pull_request:
-    paths:
-      - "dashboard/**"
-      - ".github/workflows/dashboard-ci.yml"
   push:
     branches: [main]
-    paths:
-      - "dashboard/**"
-      - ".github/workflows/dashboard-ci.yml"
 
 jobs:
   check:
