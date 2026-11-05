@@ -4,8 +4,11 @@ import { databaseConnection } from "../src/lib/db-connection";
 
 const pooledUrl = "postgresql://user:password@pooler.example:6543/postgres?pgbouncer=true&sslmode=require";
 
-test("database connection keeps the provided URL when no CA is configured", () => {
-  assert.deepEqual(databaseConnection(pooledUrl), { connectionString: pooledUrl });
+test("database connection requests full TLS verification without a custom CA", () => {
+  const connection = databaseConnection(pooledUrl);
+  const url = new URL(connection.connectionString!);
+  assert.equal(url.searchParams.get("sslmode"), "verify-full");
+  assert.equal(url.searchParams.get("pgbouncer"), "true");
 });
 
 test("database connection verifies the CA without URL SSL flags overriding it", () => {

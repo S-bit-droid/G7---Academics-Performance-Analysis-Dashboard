@@ -79,7 +79,7 @@ async function HodView({ role }: { role: DashboardRole & { kind: "HOD" } }) {
 async function AdminView() {
   const db = getDb();
   const [students, teachers, hods, admins] = await Promise.all([db.student.count(), db.teacher.count(), db.hOD.count(), db.admin.count()]);
-  return <Panel title="Provisioned role records"><div className="grid grid-cols-2 gap-4 sm:grid-cols-4">{[["Students", students], ["Teachers", teachers], ["HODs", hods], ["Admins", admins]].map(([label, count]) => <div key={label} className="rounded-xl border border-white/10 p-4"><p className="text-xs text-slate-400">{label}</p><p className="mt-2 text-2xl font-semibold text-cyan-300">{count}</p></div>)}</div><p className="mt-5 text-sm text-slate-400">Admin access does not grant permission to edit academic records.</p></Panel>;
+  return <Panel title="Provisioned role records"><div className="grid grid-cols-2 gap-4 sm:grid-cols-4">{[["Students", students], ["Teachers", teachers], ["HODs", hods], ["Admins", admins]].map(([label, count]) => <div key={label} className="rounded-xl border border-white/10 p-4"><p className="text-xs text-slate-400">{label}</p><p className="mt-2 text-2xl font-semibold text-cyan-300">{count}</p></div>)}</div><Link href="/dashboard/admin" className="mt-5 inline-flex rounded-lg bg-cyan-400 px-4 py-2 text-sm font-semibold text-[#0a1220] hover:bg-cyan-300">Manage accounts</Link><p className="mt-4 text-sm text-slate-400">Admin access does not grant permission to edit academic records.</p></Panel>;
 }
 
 export default async function Dashboard() {

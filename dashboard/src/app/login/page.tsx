@@ -18,7 +18,7 @@ export default async function Login({ searchParams }: { searchParams: Promise<{ 
           <form action={signIn} className="mt-8 space-y-5">
             <div><label htmlFor="email" className="mb-2 block text-sm font-medium">Email</label><input id="email" name="email" type="email" autoComplete="email" required className="w-full rounded-lg border border-white/20 bg-[#0a1220] px-4 py-3 outline-none focus:border-cyan-300" /></div>
             <div><label htmlFor="password" className="mb-2 block text-sm font-medium">Password</label><input id="password" name="password" type="password" autoComplete="current-password" required className="w-full rounded-lg border border-white/20 bg-[#0a1220] px-4 py-3 outline-none focus:border-cyan-300" /></div>
-            {error && <p role="alert" className="text-sm text-rose-300">{error === "missing" ? "Enter both email and password." : "The sign-in details could not be verified."}</p>}
+            {error && <p role="alert" className="text-sm text-rose-300">{error === "missing" ? "Enter both email and password." : error === "invite" ? "This invitation is invalid or expired. Ask the Admin for a new invitation." : "The sign-in details could not be verified."}</p>}
             <button type="submit" className="w-full rounded-lg bg-cyan-400 px-5 py-3 font-semibold text-[#0a1220] hover:bg-cyan-300">Sign in</button>
           </form>
         )}
