@@ -11,7 +11,7 @@ Application under development. Stack: Next.js, Tailwind CSS, Supabase Auth and P
 - Calculation tests cover sum/average, the Master's 15/30 warning and attendance below 30%. Attendance warnings remain hidden in the UI until the source-freshness rule is agreed.
 - Assigned Teachers can select an attendance source, validate an Excel marks or attendance workbook, read an authorised Google Sheet on request, save a versioned draft and release it. Validation rejects unmatched students, invalid rows and duplicate identifiers before a write. Previous released versions remain available until the new draft is released.
 - Admin can create one account or import a role-specific CSV (up to 25 rows), preview and validate it, assign the role's programme/department scope, send invitations and view accounts plus basic seven-day usage counts.
-- Admin can then link Teachers and Students to an existing subject, term and section; the server checks that these links stay within their department or programme.
+- The HOD assigns Teachers to a subject, term and section within their department. Admin enrols Students in a subject, term and section within their programme. Both checks run on the server.
 
 Scheduled or automatic Sheet refresh, quiz attempts, reports, calendar publishing, profile/work editing, feedback and academic guidance still need implementation. The Sheet path needs a live service-account test. No wellbeing responses or university-portal integration are included.
 

@@ -145,31 +145,6 @@ export async function createCsvAccounts(_previous: ProvisionState, formData: For
   return provision(roleValue, parsed.rows);
 }
 
-export async function assignTeachingGroup(_previous: ProvisionState, formData: FormData): Promise<ProvisionState> {
-  await requireAdmin();
-  const teacherId = String(formData.get("teacherId") ?? "");
-  const subjectId = String(formData.get("subjectId") ?? "");
-  const termId = String(formData.get("termId") ?? "");
-  const section = String(formData.get("section") ?? "").trim().toUpperCase();
-  if (!/^[A-Z0-9-]{1,20}$/.test(section)) return errorState("Enter a section using up to 20 letters, numbers or hyphens.");
-  const db = getDb();
-  const [teacher, subject, term] = await Promise.all([
-    db.teacher.findUnique({ where: { id: teacherId } }),
-    db.subject.findUnique({ where: { id: subjectId }, include: { programme: true } }),
-    db.term.findUnique({ where: { id: termId } }),
-  ]);
-  if (!teacher || !subject || !term) return errorState("Select an existing Teacher, subject and term.");
-  if (teacher.departmentId !== subject.programme.departmentId || subject.programmeId !== term.programmeId) {
-    return errorState("The Teacher, subject and term must belong to the same academic scope.");
-  }
-  await db.teachingAssignment.upsert({
-    where: { teacherId_subjectId_termId_section: { teacherId, subjectId, termId, section } },
-    create: { teacherId, subjectId, termId, section }, update: {},
-  });
-  revalidatePath("/dashboard/admin");
-  return { message: "Teaching group assigned.", results: [] };
-}
-
 export async function enrolStudentInSubject(_previous: ProvisionState, formData: FormData): Promise<ProvisionState> {
   await requireAdmin();
   const studentId = String(formData.get("studentId") ?? "");

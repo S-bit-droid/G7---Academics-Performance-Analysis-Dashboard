@@ -73,7 +73,7 @@ async function TeacherView({ role }: { role: DashboardRole & { kind: "TEACHER" }
 async function HodView({ role }: { role: DashboardRole & { kind: "HOD" } }) {
   const hod = await getDb().hOD.findUnique({ where: { id: role.id }, include: { department: { include: { programmes: true } } } });
   if (!hod) return <Empty>HOD record unavailable.</Empty>;
-  return <Panel title="Department overview"><p className="text-xl font-semibold">{hod.department.name}</p><p className="mt-2 text-sm text-slate-400">{hod.department.programmes.length} programme(s) in scope</p><div className="mt-5 space-y-2">{hod.department.programmes.map((programme) => <p key={programme.id} className="rounded-lg border border-white/10 p-3 text-sm">{programme.code} · {programme.name} · {programme.level}</p>)}</div></Panel>;
+  return <Panel title="Department overview"><Link href="/dashboard/hod" className="mb-5 inline-flex rounded-lg bg-cyan-400 px-4 py-2 text-sm font-semibold text-[#0a1220] hover:bg-cyan-300">Manage teaching assignments</Link><p className="text-xl font-semibold">{hod.department.name}</p><p className="mt-2 text-sm text-slate-400">{hod.department.programmes.length} programme(s) in scope</p><div className="mt-5 space-y-2">{hod.department.programmes.map((programme) => <p key={programme.id} className="rounded-lg border border-white/10 p-3 text-sm">{programme.code} · {programme.name} · {programme.level}</p>)}</div></Panel>;
 }
 
 async function AdminView() {
