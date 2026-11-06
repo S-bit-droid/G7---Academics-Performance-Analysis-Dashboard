@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseAccountCsv } from "../src/lib/admin-accounts";
+import { accountRoles, isAccountRole, parseAccountCsv } from "../src/lib/admin-accounts";
+
+test("HOD is an appointment, not a role created through account import", () => {
+  assert.deepEqual(accountRoles, ["STUDENT", "TEACHER", "ADMIN"]);
+  assert.equal(isAccountRole("HOD"), false);
+});
 
 test("student CSV accepts a BOM, reordered columns and a quoted name", () => {
   const parsed = parseAccountCsv("\uFEFFemail,name,programme_code,enrolment_no,faculty_no\r\nstudent@example.org,\"Khan, A\",BCA,EN-01,F-01\r\n", "STUDENT");

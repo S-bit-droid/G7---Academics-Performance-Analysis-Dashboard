@@ -5,6 +5,7 @@ import { getDb } from "@/lib/db";
 import { listAuthUsers } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { AccountForms } from "./account-forms";
+import { HodAppointmentForm } from "./hod-appointment-form";
 import { ScopeForms } from "./scope-forms";
 
 export const dynamic = "force-dynamic";
@@ -23,10 +24,10 @@ export default async function AdminPage() {
   const db = getDb();
   const since = activityWindowStart();
   const [departments, programmes, students, teachers, hods, admins, subjects, terms, imports, attempts] = await Promise.all([
-    db.department.findMany({ select: { code: true, name: true }, orderBy: { code: "asc" } }),
+    db.department.findMany({ select: { id: true, code: true, name: true, hod: { select: { authUserId: true, name: true } } }, orderBy: { code: "asc" } }),
     db.programme.findMany({ select: { code: true, name: true }, orderBy: { code: "asc" } }),
     db.student.findMany({ select: { id: true, authUserId: true, name: true, programmeId: true, programme: { select: { code: true } } }, orderBy: { name: "asc" }, take: 50 }),
-    db.teacher.findMany({ select: { id: true, authUserId: true, name: true, departmentId: true, department: { select: { code: true } } }, orderBy: { name: "asc" }, take: 50 }),
+    db.teacher.findMany({ select: { id: true, authUserId: true, name: true, departmentId: true, department: { select: { code: true } } }, orderBy: { name: "asc" } }),
     db.hOD.findMany({ select: { authUserId: true, name: true, department: { select: { code: true } } }, orderBy: { name: "asc" }, take: 50 }),
     db.admin.findMany({ select: { authUserId: true, name: true }, orderBy: { name: "asc" }, take: 50 }),
     db.subject.findMany({ select: { id: true, name: true, programmeId: true, programme: { select: { departmentId: true } } }, orderBy: { name: "asc" } }),
@@ -44,7 +45,7 @@ export default async function AdminPage() {
   const hodAuthIds = new Set(hods.map((item) => item.authUserId));
   const accounts = [
     ...students.map((item) => ({ ...item, kind: "Student", scope: item.programme.code })),
-    ...teachers.filter((item) => !hodAuthIds.has(item.authUserId)).map((item) => ({ ...item, kind: "Teacher", scope: item.department.code })),
+    ...teachers.filter((item) => !hodAuthIds.has(item.authUserId)).slice(0, 50).map((item) => ({ ...item, kind: "Teacher", scope: item.department.code })),
     ...hods.map((item) => ({ ...item, kind: "HOD", scope: item.department.code })),
     ...admins.map((item) => ({ ...item, kind: "Admin", scope: "System" })),
   ].sort((a, b) => a.name.localeCompare(b.name));
@@ -55,6 +56,7 @@ export default async function AdminPage() {
     {!authError && !inviteReady && <p role="alert" className="mt-6 rounded-lg border border-amber-300/30 bg-amber-300/10 p-4 text-sm text-amber-200">Invite emails need the Supabase invite template and AUTH_INVITE_TEMPLATE_READY=true before accounts can be created.</p>}
     <div className="mt-8 grid gap-4 sm:grid-cols-3">{[["Recent sign-ins", recentSignIns], ["Academic imports", imports], ["Quiz attempts", attempts]].map(([label, count]) => <div key={label} className="rounded-xl border border-white/10 bg-[#101e30] p-5"><p className="text-sm text-slate-400">{label} · last 7 days</p><p className="mt-2 text-3xl font-semibold text-cyan-300">{authError && label === "Recent sign-ins" ? "Unavailable" : count}</p></div>)}</div>
     {!authError && <div className="mt-8"><AccountForms departments={departments} programmes={programmes} /></div>}
+    <HodAppointmentForm departments={departments} teachers={teachers} />
     <ScopeForms students={students.map((item) => ({ id: item.id, name: item.name, programmeId: item.programmeId }))} subjects={subjects.map((item) => ({ id: item.id, name: item.name, programmeId: item.programmeId }))} terms={terms} />
     <section className="mt-8 rounded-2xl border border-white/10 bg-[#101e30] p-6"><h2 className="text-lg font-semibold">Accounts and access</h2><p className="mt-2 text-sm text-slate-400">Showing up to 50 records per role. Role and academic scope are set when each account is created.</p><div className="mt-5 overflow-x-auto"><table className="w-full min-w-[650px] text-left text-sm"><thead className="text-slate-400"><tr><th className="pb-3">Name</th><th className="pb-3">Email</th><th className="pb-3">Role</th><th className="pb-3">Scope</th><th className="pb-3">Last sign-in</th></tr></thead><tbody>{accounts.map((account) => { const auth = byId.get(account.authUserId); return <tr key={account.authUserId} className="border-t border-white/10"><td className="py-3">{account.name}</td><td className="py-3 text-slate-300">{auth?.email ?? "Unavailable"}</td><td className="py-3">{account.kind}</td><td className="py-3">{account.scope}</td><td className="py-3 text-slate-400">{auth?.lastSignInAt ? new Date(auth.lastSignInAt).toLocaleDateString("en-IN") : "Not yet"}</td></tr>; })}</tbody></table>{accounts.length === 0 && <p className="py-5 text-sm text-slate-400">No role accounts yet.</p>}</div></section>
   </div></main>;

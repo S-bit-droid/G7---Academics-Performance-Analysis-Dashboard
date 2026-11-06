@@ -1,10 +1,12 @@
 import { formatAcademicTime } from "@/lib/academic-time";
 import { MonthlyReportCard } from "@/app/dashboard/monthly-report-card";
 import Link from "next/link";
+import { attendanceSummary, combinedSessional, marksWarning } from "@/lib/academic";
 import { getDb } from "@/lib/db";
 import { privateFileUrl } from "@/lib/private-files";
 import { requireStudent } from "@/lib/student-access";
 import { addStudentWork, saveAcademicProfile, sendAcademicFeedback, startQuiz, submitAssignment, updateStudentWork } from "./actions";
+import { StudentProgress, type SubjectProgress } from "./student-progress";
 
 export const dynamic = "force-dynamic";
 const input = "mt-1 w-full rounded-lg border border-white/20 bg-[#0a1220] px-3 py-2 text-sm";
@@ -12,13 +14,31 @@ const input = "mt-1 w-full rounded-lg border border-white/20 bg-[#0a1220] px-3 p
 export default async function StudentWorkspace({ searchParams }: { searchParams: Promise<{ ok?: string; error?: string }> }) {
   const student = await requireStudent();
   const db = getDb();
-  const [enrolments, work, threads, reports, notices] = await Promise.all([
+  const [enrolments, work, threads, reports, notices, marks, attendance] = await Promise.all([
     db.enrolment.findMany({ where: { studentId: student.id }, include: { subject: true, term: true } }),
     db.studentWork.findMany({ where: { studentId: student.id }, orderBy: { updatedAt: "desc" }, take: 30 }),
     db.questionThread.findMany({ where: { studentId: student.id }, include: { subject: true, messages: { orderBy: { createdAt: "asc" } } }, orderBy: { createdAt: "desc" }, take: 20 }),
     db.monthlyReport.findMany({ where: { studentId: student.id }, orderBy: { month: "desc" }, take: 12 }),
     db.notification.findMany({ where: { studentId: student.id }, orderBy: { createdAt: "desc" }, take: 20 }),
+    db.mark.findMany({ where: { studentId: student.id, status: "RELEASED" }, orderBy: { updatedAt: "desc" } }),
+    db.attendanceRecord.findMany({ where: { studentId: student.id, recordStatus: "RELEASED" }, orderBy: { sessionOn: "desc" } }),
   ]);
+  const profileIncomplete = !student.highSchool || !student.intermediate || !student.branch || (student.programme.level === "PG" && !student.bachelors);
+  const progress: SubjectProgress[] = enrolments.map((row) => {
+    const mark = marks.find((item) => item.subjectId === row.subjectId && item.termId === row.termId);
+    const sessions = attendance.filter((item) => item.subjectId === row.subjectId && item.termId === row.termId);
+    const summary = attendanceSummary(sessions.map((item) => item.status), true);
+    const combined = mark ? combinedSessional(mark.sessional1, mark.sessional2, row.subject.combinedRule) : null;
+    return {
+      key: row.id, subject: row.subject.name, term: row.term.label,
+      sessional1: mark?.sessional1 ?? null, sessional2: mark?.sessional2 ?? null,
+      combined, combinedRule: row.subject.combinedRule,
+      combinedMaximum: row.subject.sessionalMax * (row.subject.combinedRule === "SUM" ? 2 : 1),
+      attendancePercentage: summary.percentage, attended: summary.attended, counted: summary.counted,
+      marksWarning: Boolean(mark && marksWarning(student.programme.level, mark.sessional1, mark.sessional2, row.subject.sessionalMax)),
+      attendanceWarning: summary.warning,
+    };
+  });
   const allGroups = await db.teachingAssignment.findMany({ where: { subjectId: { in: enrolments.map((row) => row.subjectId) } }, include: { teacher: true, subject: true, term: true } });
   const groups = allGroups.filter((group) => enrolments.some((row) => row.subjectId === group.subjectId && row.termId === group.termId && row.section === group.section));
   const groupIds = groups.map((group) => group.id);
@@ -39,9 +59,11 @@ export default async function StudentWorkspace({ searchParams }: { searchParams:
     <Link href="/dashboard" className="text-sm text-cyan-300">← Dashboard</Link><h1 className="mt-6 text-3xl font-semibold">My academic workspace</h1>
     {ok && <p role="status" className="mt-5 rounded-lg border border-emerald-400/30 p-3 text-sm text-emerald-200">{ok}</p>}
     {error && <p role="alert" className="mt-5 rounded-lg border border-rose-400/30 p-3 text-sm text-rose-200">{error}</p>}
+    {profileIncomplete && <div role="status" className="mt-6 rounded-xl border border-cyan-300/40 bg-cyan-300/10 p-5"><h2 className="font-semibold text-cyan-100">Complete your academic background</h2><p className="mt-2 text-sm text-slate-300">Add your high school, Class 12 or intermediate, branch{student.programme.level === "PG" ? ", and bachelor’s background" : ""}. Your assigned Teachers and HOD can use it to understand your prior study.</p><a href="#academic-background" className="mt-3 inline-block text-sm font-semibold text-cyan-300 underline">Go to background form</a></div>}
+    <StudentProgress subjects={progress} reports={reports} />
     <div className="mt-8 grid gap-6 lg:grid-cols-2">
-      <section className="rounded-2xl border border-white/10 bg-[#101e30] p-6"><h2 className="text-lg font-semibold">Academic background</h2><p className="mt-2 text-sm text-slate-400">Share your prior study and interests with assigned Teachers.</p>
-        <form action={saveAcademicProfile} className="mt-4 space-y-3"><label className="block text-sm">High school<input name="highSchool" defaultValue={student.highSchool ?? ""} maxLength={160} className={input} /></label><label className="block text-sm">Class 12 / intermediate<input name="intermediate" defaultValue={student.intermediate ?? ""} maxLength={160} className={input} /></label>{student.programme.level === "PG" && <label className="block text-sm">Bachelors<input name="bachelors" defaultValue={student.bachelors ?? ""} maxLength={160} className={input} /></label>}<label className="block text-sm">Branch or stream<input name="branch" defaultValue={student.branch ?? ""} maxLength={160} className={input} /></label><label className="block text-sm">Interests, separated by commas<input name="interests" defaultValue={student.interests.join(", ")} className={input} /></label><button className="rounded-lg bg-cyan-400 px-4 py-2 text-sm font-semibold text-[#0a1220]">Save background</button></form>
+      <section id="academic-background" className="rounded-2xl border border-white/10 bg-[#101e30] p-6"><h2 className="text-lg font-semibold">Academic background</h2><p className="mt-2 text-sm text-slate-400">Share your prior study and interests with assigned Teachers.</p>
+        <form action={saveAcademicProfile} className="mt-4 space-y-3"><label className="block text-sm">High school<input name="highSchool" defaultValue={student.highSchool ?? ""} maxLength={160} required className={input} /></label><label className="block text-sm">Class 12 / intermediate<input name="intermediate" defaultValue={student.intermediate ?? ""} maxLength={160} required className={input} /></label>{student.programme.level === "PG" && <label className="block text-sm">Bachelors<input name="bachelors" defaultValue={student.bachelors ?? ""} maxLength={160} required className={input} /></label>}<label className="block text-sm">Branch or stream<input name="branch" defaultValue={student.branch ?? ""} maxLength={160} required className={input} /></label><label className="block text-sm">Interests, separated by commas<input name="interests" defaultValue={student.interests.join(", ")} className={input} /></label><button className="rounded-lg bg-cyan-400 px-4 py-2 text-sm font-semibold text-[#0a1220]">Save background</button></form>
       </section>
       <section className="rounded-2xl border border-white/10 bg-[#101e30] p-6"><h2 className="text-lg font-semibold">Resume and achievements</h2><p className="mt-2 text-xs text-slate-400">Files are private; your assigned Teachers and department HOD can view them. Up to 2 MB.</p>
         <form action={addStudentWork} className="mt-4 space-y-3"><label className="block text-sm">Type<select name="kind" className={input}><option value="RESUME">Resume</option><option value="CERTIFICATION">Certification</option><option value="SCHOLARSHIP">Scholarship</option><option value="PROJECT">Project</option><option value="OTHER">Other</option></select></label><label className="block text-sm">Title<input name="title" maxLength={120} required className={input} /></label><label className="block text-sm">Description<textarea name="description" maxLength={1000} rows={2} className={input} /></label><label className="block text-sm">HTTPS link, optional<input name="url" type="url" className={input} /></label><label className="block text-sm">File, required for a resume<input name="file" type="file" accept=".pdf,.docx,.txt,.png,.jpg,.jpeg" className={input} /></label><button className="rounded-lg bg-cyan-400 px-4 py-2 text-sm font-semibold text-[#0a1220]">Add item</button></form>

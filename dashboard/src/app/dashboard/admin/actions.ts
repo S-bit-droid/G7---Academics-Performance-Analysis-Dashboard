@@ -7,12 +7,7 @@ import { getDb } from "@/lib/db";
 import { AccountInput, AccountRole, isAccountRole, MAX_CSV_BYTES, parseAccountCsv, validateAccountRows } from "@/lib/admin-accounts";
 import { createAdminClient, inviteRedirectUrl, listAuthUsers } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-
-export type ProvisionState = {
-  message: string;
-  results: { line: number; email: string; outcome: string }[];
-};
-export const emptyProvisionState: ProvisionState = { message: "", results: [] };
+import type { HodAppointmentState, ProvisionState } from "./form-state";
 
 async function requireAdmin() {
   const supabase = await createClient();
@@ -47,18 +42,12 @@ async function checkAccounts(role: AccountRole, rows: AccountInput[]): Promise<s
       if (enrolmentNumbers.has(row.enrolmentNo!)) issues.push(`Line ${row.line}: enrolment_no already exists.`);
     }
   }
-  if (role === "TEACHER" || role === "HOD") {
-    const departments = await db.department.findMany({ where: { code: { in: rows.map((row) => row.departmentCode!) } }, include: { hod: role === "HOD" } });
+  if (role === "TEACHER") {
+    const departments = await db.department.findMany({ where: { code: { in: rows.map((row) => row.departmentCode!) } } });
     const byCode = new Map(departments.map((item) => [item.code, item]));
-    const seenHodDepartments = new Set<string>();
     for (const row of rows) {
       const department = byCode.get(row.departmentCode!);
       if (!department) issues.push(`Line ${row.line}: department_code was not found.`);
-      if (role === "HOD") {
-        if (department?.hod) issues.push(`Line ${row.line}: this department already has an HOD.`);
-        if (seenHodDepartments.has(row.departmentCode!)) issues.push(`Line ${row.line}: only one HOD per department is supported.`);
-        seenHodDepartments.add(row.departmentCode!);
-      }
     }
   }
   return issues;
@@ -71,13 +60,9 @@ async function createRoleRecord(role: AccountRole, row: AccountInput, authUserId
     await db.student.create({ data: {
       authUserId, name: row.name, facultyNo: row.facultyNo!, enrolmentNo: row.enrolmentNo!, programmeId: programme.id,
     } });
-  } else if (role === "TEACHER" || role === "HOD") {
+  } else if (role === "TEACHER") {
     const department = await db.department.findUniqueOrThrow({ where: { code: row.departmentCode! } });
-    if (role === "TEACHER") await db.teacher.create({ data: { authUserId, name: row.name, departmentId: department.id } });
-    else await db.$transaction([
-      db.hOD.create({ data: { authUserId, name: row.name, departmentId: department.id } }),
-      db.teacher.create({ data: { authUserId, name: row.name, departmentId: department.id } }),
-    ]);
+    await db.teacher.create({ data: { authUserId, name: row.name, departmentId: department.id } });
   } else {
     await db.admin.create({ data: { authUserId, name: row.name } });
   }
@@ -146,6 +131,43 @@ export async function createCsvAccounts(_previous: ProvisionState, formData: For
   const parsed = parseAccountCsv(await file.text(), roleValue);
   if (parsed.issues.length) return errorState(`${parsed.issues.slice(0, 8).join(" ")} No accounts were created.`);
   return provision(roleValue, parsed.rows);
+}
+
+export async function appointHod(_previous: HodAppointmentState, formData: FormData): Promise<HodAppointmentState> {
+  await requireAdmin();
+  const departmentId = String(formData.get("departmentId") ?? "");
+  const teacherId = String(formData.get("teacherId") ?? "");
+  if (!departmentId || !teacherId) return { ok: false, message: "Choose a Teacher in this department." };
+  const db = getDb();
+  try {
+    const changed = await db.$transaction(async (tx) => {
+      const [department, teacher] = await Promise.all([
+        tx.department.findUnique({ where: { id: departmentId }, select: { id: true } }),
+        tx.teacher.findUnique({ where: { id: teacherId }, select: { authUserId: true, name: true, departmentId: true } }),
+      ]);
+      if (!department || !teacher || teacher.departmentId !== department.id) {
+        throw new Error("Choose a Teacher in this department.");
+      }
+      const otherAppointment = await tx.hOD.findUnique({ where: { authUserId: teacher.authUserId }, select: { departmentId: true } });
+      if (otherAppointment && otherAppointment.departmentId !== departmentId) {
+        throw new Error("This Teacher already leads another department.");
+      }
+      const current = await tx.hOD.findUnique({ where: { departmentId }, select: { authUserId: true } });
+      if (current?.authUserId === teacher.authUserId) return "unchanged";
+      if (current) await tx.hOD.delete({ where: { departmentId } });
+      await tx.hOD.create({ data: { authUserId: teacher.authUserId, name: teacher.name, departmentId } });
+      return current ? "replaced" : "appointed";
+    }, { isolationLevel: "Serializable" });
+    revalidatePath("/dashboard/admin");
+    revalidatePath("/dashboard");
+    revalidatePath("/dashboard/hod");
+    revalidatePath("/dashboard/teacher");
+    return { ok: true, message: changed === "replaced" ? "HOD appointment updated. The previous HOD now has Teacher access only." : changed === "appointed" ? "Teacher appointed as HOD." : "This Teacher is already the HOD." };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    return { ok: false, message: ["Choose a Teacher in this department.", "This Teacher already leads another department."].includes(message)
+      ? message : "The appointment could not be saved. Refresh and try again." };
+  }
 }
 
 export async function enrolStudentInSubject(_previous: ProvisionState, formData: FormData): Promise<ProvisionState> {

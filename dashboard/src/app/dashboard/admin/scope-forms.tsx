@@ -1,7 +1,8 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { emptyProvisionState, enrolStudentInSubject } from "./actions";
+import { enrolStudentInSubject } from "./actions";
+import { emptyProvisionState } from "./form-state";
 
 const field = "mt-1 w-full rounded-lg border border-white/20 bg-[#0a1220] px-3 py-2 text-sm";
 const button = "rounded-lg border border-cyan-300 px-4 py-2 text-sm font-semibold text-cyan-200 hover:bg-cyan-300/10 disabled:opacity-40";

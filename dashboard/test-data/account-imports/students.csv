@@ -1,0 +1,3 @@
+name,email,faculty_no,enrolment_no,programme_code
+Test Student One,student.one@example.com,G7TEST-F001,G7TEST-E001,G7-DEMO-UG
+Test Student Two,student.two@example.com,G7TEST-F002,G7TEST-E002,G7-DEMO-UG

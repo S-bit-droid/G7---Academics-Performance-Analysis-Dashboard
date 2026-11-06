@@ -1,10 +1,9 @@
-export const accountRoles = ["STUDENT", "TEACHER", "HOD", "ADMIN"] as const;
+export const accountRoles = ["STUDENT", "TEACHER", "ADMIN"] as const;
 export type AccountRole = (typeof accountRoles)[number];
 
 export const csvHeaders: Record<AccountRole, readonly string[]> = {
   STUDENT: ["name", "email", "faculty_no", "enrolment_no", "programme_code"],
   TEACHER: ["name", "email", "department_code"],
-  HOD: ["name", "email", "department_code"],
   ADMIN: ["name", "email"],
 };
 
@@ -90,7 +89,7 @@ export function validateAccountRows(role: AccountRole, rows: AccountInput[]): st
       if (row.facultyNo) facultyNumbers.add(row.facultyNo);
       if (row.enrolmentNo) enrolmentNumbers.add(row.enrolmentNo);
     }
-    if ((role === "TEACHER" || role === "HOD") && (!row.departmentCode || row.departmentCode.length > 64)) {
+    if (role === "TEACHER" && (!row.departmentCode || row.departmentCode.length > 64)) {
       issues.push(`${prefix}: department_code is required (up to 64 characters).`);
     }
   }

@@ -19,6 +19,7 @@ export async function saveAcademicProfile(form: FormData) {
   const bachelors = field(form, "bachelors");
   const branch = field(form, "branch");
   const interests = field(form, "interests").split(",").map((item) => item.trim()).filter(Boolean).slice(0, 20);
+  if (!highSchool || !intermediate || !branch || (student.programme.level === "PG" && !bachelors)) back("Complete the required academic background fields.", true);
   if ([highSchool, intermediate, bachelors, branch].some((item) => item.length > 160) || interests.some((item) => item.length > 80)) back("Profile fields are too long.", true);
   await getDb().student.update({ where: { id: student.id }, data: {
     highSchool: highSchool || null, intermediate: intermediate || null,

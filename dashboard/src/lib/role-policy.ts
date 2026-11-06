@@ -5,6 +5,7 @@ export function compatibleRoleRecords(records: {
   hodDepartmentId: string | null;
 }) {
   const { student, admin, teacherDepartmentId, hodDepartmentId } = records;
+  if (hodDepartmentId !== null && teacherDepartmentId === null) return false;
   const count = Number(student) + Number(admin) + Number(Boolean(teacherDepartmentId)) + Number(Boolean(hodDepartmentId));
   if (count <= 1) return true;
   return count === 2 && teacherDepartmentId !== null && teacherDepartmentId === hodDepartmentId;

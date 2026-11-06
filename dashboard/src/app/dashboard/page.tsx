@@ -35,7 +35,7 @@ async function StudentView({ role }: { role: DashboardRole & { kind: "STUDENT" }
   return (
     <div className="space-y-6">
       <Link href="/dashboard/student" className="inline-flex rounded-lg bg-cyan-400 px-4 py-2 text-sm font-semibold text-[#0a1220] hover:bg-cyan-300">Open academic workspace</Link>
-      {(!student.highSchool || !student.intermediate || !student.branch || (student.programme.level === "PG" && !student.bachelors)) && <div className="rounded-xl border border-cyan-300/30 bg-cyan-300/5 p-4 text-sm text-cyan-100">Complete your academic background in the <Link href="/dashboard/student" className="underline">academic workspace</Link> so your Teachers can understand your prior study.</div>}
+      {(!student.highSchool || !student.intermediate || !student.branch || (student.programme.level === "PG" && !student.bachelors)) && <div className="rounded-xl border border-cyan-300/30 bg-cyan-300/5 p-4 text-sm text-cyan-100">Complete your academic background in the <Link href="/dashboard/student#academic-background" className="underline">academic workspace</Link> so your Teachers can understand your prior study.</div>}
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="rounded-xl border border-white/10 bg-white/5 p-5"><p className="text-xs uppercase tracking-widest text-slate-400">Programme</p><p className="mt-3 text-xl font-semibold">{student.programme.name}</p></div>
         <div className="rounded-xl border border-white/10 bg-white/5 p-5"><p className="text-xs uppercase tracking-widest text-slate-400">Released subjects</p><p className="mt-3 text-3xl font-semibold text-cyan-300">{student.marks.length}</p></div>
