@@ -41,9 +41,10 @@ export default async function AdminPage() {
   try { authUsers = await listAuthUsers(); }
   catch (error) { authError = error instanceof Error ? error.message : "Account service is unavailable."; }
   const byId = new Map(authUsers.map((user) => [user.id, user]));
+  const hodAuthIds = new Set(hods.map((item) => item.authUserId));
   const accounts = [
     ...students.map((item) => ({ ...item, kind: "Student", scope: item.programme.code })),
-    ...teachers.map((item) => ({ ...item, kind: "Teacher", scope: item.department.code })),
+    ...teachers.filter((item) => !hodAuthIds.has(item.authUserId)).map((item) => ({ ...item, kind: "Teacher", scope: item.department.code })),
     ...hods.map((item) => ({ ...item, kind: "HOD", scope: item.department.code })),
     ...admins.map((item) => ({ ...item, kind: "Admin", scope: "System" })),
   ].sort((a, b) => a.name.localeCompare(b.name));

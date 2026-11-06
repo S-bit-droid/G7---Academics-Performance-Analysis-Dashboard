@@ -48,7 +48,8 @@ async function main() {
   runNpm("db:generate");
   const { PrismaClient } = await import("../src/generated/prisma/client");
   const db = new PrismaClient({
-    adapter: new PrismaPg(databaseConnection(config.databaseUrl, process.env.SUPABASE_DB_CA_CERT)),
+    // Bootstrap uses the session connection so every upsert is visible to the next step.
+    adapter: new PrismaPg(databaseConnection(config.directUrl, process.env.SUPABASE_DB_CA_CERT)),
   });
 
   try {
@@ -103,70 +104,75 @@ async function main() {
     const idSet = new Set(Object.values(authIds));
     if (idSet.size !== demoRoles.length) throw new Error("Two demo roles resolved to the same Auth user.");
 
-    await db.$transaction(async (tx) => {
-      // A Supabase identity may belong to only one dashboard role.
-      for (const role of demoRoles) {
-        const authUserId = authIds[role];
-        const found = await Promise.all([
-          tx.admin.findUnique({ where: { authUserId }, select: { id: true } }),
-          tx.student.findUnique({ where: { authUserId }, select: { id: true } }),
-          tx.teacher.findUnique({ where: { authUserId }, select: { id: true } }),
-          tx.hOD.findUnique({ where: { authUserId }, select: { id: true } }),
-        ]);
-        const assignments = demoRoles.filter((_, index) => Boolean(found[index]));
-        if (assignments.some((assigned) => assigned !== role)) {
-          throw new Error(`${role} Auth user already has a different dashboard role.`);
-        }
+    // Each upsert commits independently so a rerun can finish after a partial failure.
+    const tables = db;
+    // HOD may also have a Teacher profile for personally assigned classes.
+    for (const role of demoRoles) {
+      const authUserId = authIds[role];
+      const found = [
+        await tables.admin.findUnique({ where: { authUserId }, select: { id: true } }),
+        await tables.student.findUnique({ where: { authUserId }, select: { id: true } }),
+        await tables.teacher.findUnique({ where: { authUserId }, select: { id: true } }),
+        await tables.hOD.findUnique({ where: { authUserId }, select: { id: true } }),
+      ];
+      const assignments = demoRoles.filter((_, index) => Boolean(found[index]));
+      if (assignments.some((assigned) => assigned !== role && !(role === "HOD" && assigned === "TEACHER"))) {
+        throw new Error(`${role} Auth user already has a different dashboard role.`);
       }
+    }
 
-      const department = await tx.department.upsert({
-        where: { code: "G7-DEMO" },
-        create: { code: "G7-DEMO", name: "Demo Department" },
-        update: {},
-      });
-      const programme = await tx.programme.upsert({
-        where: { code: "G7-DEMO-UG" },
-        create: { code: "G7-DEMO-UG", name: "Demo Undergraduate Programme", level: "UG", departmentId: department.id },
-        update: {},
-      });
-      if (programme.departmentId !== department.id || programme.level !== "UG") {
-        throw new Error("G7-DEMO-UG already exists with a different department or level.");
-      }
-      const currentHod = await tx.hOD.findUnique({ where: { departmentId: department.id } });
-      if (currentHod && currentHod.authUserId !== authIds.HOD) {
-        throw new Error("The demo department already has a different HOD.");
-      }
-
-      await tx.admin.upsert({
-        where: { authUserId: authIds.ADMIN },
-        create: { authUserId: authIds.ADMIN, name: config.people.ADMIN.name },
-        update: {},
-      });
-      const student = await tx.student.upsert({
-        where: { authUserId: authIds.STUDENT },
-        create: {
-          authUserId: authIds.STUDENT,
-          name: config.people.STUDENT.name,
-          facultyNo: "G7-DEMO-F001",
-          enrolmentNo: "G7-DEMO-E001",
-          programmeId: programme.id,
-        },
-        update: {},
-      });
-      const teacher = await tx.teacher.upsert({
-        where: { authUserId: authIds.TEACHER },
-        create: { authUserId: authIds.TEACHER, name: config.people.TEACHER.name, departmentId: department.id },
-        update: {},
-      });
-      const hod = await tx.hOD.upsert({
-        where: { authUserId: authIds.HOD },
-        create: { authUserId: authIds.HOD, name: config.people.HOD.name, departmentId: department.id },
-        update: {},
-      });
-      if (student.programmeId !== programme.id || teacher.departmentId !== department.id || hod.departmentId !== department.id) {
-        throw new Error("An existing demo account is linked to a different programme or department.");
-      }
+    const department = await tables.department.upsert({
+      where: { code: "G7-DEMO" },
+      create: { code: "G7-DEMO", name: "Demo Department" },
+      update: {},
     });
+    const programme = await tables.programme.upsert({
+      where: { code: "G7-DEMO-UG" },
+      create: { code: "G7-DEMO-UG", name: "Demo Undergraduate Programme", level: "UG", departmentId: department.id },
+      update: {},
+    });
+    if (programme.departmentId !== department.id || programme.level !== "UG") {
+      throw new Error("G7-DEMO-UG already exists with a different department or level.");
+    }
+    const currentHod = await tables.hOD.findUnique({ where: { departmentId: department.id } });
+    if (currentHod && currentHod.authUserId !== authIds.HOD) {
+      throw new Error("The demo department already has a different HOD.");
+    }
+
+    await tables.admin.upsert({
+      where: { authUserId: authIds.ADMIN },
+      create: { authUserId: authIds.ADMIN, name: config.people.ADMIN.name },
+      update: {},
+    });
+    const student = await tables.student.upsert({
+      where: { authUserId: authIds.STUDENT },
+      create: {
+        authUserId: authIds.STUDENT,
+        name: config.people.STUDENT.name,
+        facultyNo: "G7-DEMO-F001",
+        enrolmentNo: "G7-DEMO-E001",
+        programmeId: programme.id,
+      },
+      update: {},
+    });
+    const teacher = await tables.teacher.upsert({
+      where: { authUserId: authIds.TEACHER },
+      create: { authUserId: authIds.TEACHER, name: config.people.TEACHER.name, departmentId: department.id },
+      update: {},
+    });
+    const hod = await tables.hOD.upsert({
+      where: { authUserId: authIds.HOD },
+      create: { authUserId: authIds.HOD, name: config.people.HOD.name, departmentId: department.id },
+      update: {},
+    });
+    const hodTeacher = await tables.teacher.upsert({
+      where: { authUserId: authIds.HOD },
+      create: { authUserId: authIds.HOD, name: config.people.HOD.name, departmentId: department.id },
+      update: {},
+    });
+    if (student.programmeId !== programme.id || teacher.departmentId !== department.id || hod.departmentId !== department.id || hodTeacher.departmentId !== department.id) {
+      throw new Error("An existing demo account is linked to a different programme or department.");
+    }
 
     for (const role of demoRoles) {
       const authUserId = authIds[role];

@@ -4,28 +4,23 @@ import { readSheet } from "read-excel-file/node";
 import { createHash } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { roleForAuthUser } from "@/lib/access";
 import { getDb } from "@/lib/db";
+import { requireTeacher } from "@/lib/teacher-access";
 import { readAttendanceSheet } from "@/lib/google-sheet";
-import { parseAttendanceRows, parseMarksRows, type Row } from "@/lib/imports";
-import { createClient } from "@/lib/supabase/server";
+import { parseAttendanceCsv, parseAttendanceRows, parseMarksRows, type Row } from "@/lib/imports";
 
 function fail(message: string): never {
   redirect(`/dashboard/import?error=${encodeURIComponent(message)}`);
 }
 
 async function teacherAssignment(id: string) {
-  const supabase = await createClient();
-  const { data } = await supabase.auth.getClaims();
-  if (!data?.claims?.sub) redirect("/login");
-  const role = await roleForAuthUser(data.claims.sub);
-  if (role?.kind !== "TEACHER") fail("Teacher access is required.");
+  const teacher = await requireTeacher();
   const assignment = await getDb().teachingAssignment.findFirst({
-    where: { id, teacherId: role.id },
+    where: { id, teacherId: teacher.teacherId },
     include: { subject: true, sources: { where: { active: true }, take: 1 } },
   });
   if (!assignment) fail("This teaching group is not assigned to you.");
-  return { assignment, actorAuthId: data.claims.sub };
+  return { assignment, actorAuthId: teacher.authUserId };
 }
 
 async function workbook(formData: FormData): Promise<Row[]> {
@@ -80,11 +75,11 @@ export async function selectAttendanceSource(formData: FormData) {
   const assignmentId = String(formData.get("assignmentId") ?? "");
   const kind = String(formData.get("kind") ?? "");
   const { assignment } = await teacherAssignment(assignmentId);
-  if (kind !== "EXCEL" && kind !== "GOOGLE_SHEET") fail("Choose a valid attendance source.");
+  if (kind !== "CSV" && kind !== "GOOGLE_SHEET") fail("Choose a valid attendance source.");
   const sheetId = String(formData.get("sheetId") ?? "").trim();
   const sheetTab = String(formData.get("sheetTab") ?? "").trim();
   if (kind === "GOOGLE_SHEET" && (!/^[A-Za-z0-9_-]{15,}$/.test(sheetId) || !sheetTab)) fail("Enter the authorised Sheet ID and tab name.");
-  if (assignment.sources[0]?.kind === kind && (kind !== "GOOGLE_SHEET" || assignment.sources[0].sheetId === sheetId)) redirect("/dashboard/import?ok=source-unchanged");
+  if (assignment.sources[0]?.kind === kind && (kind !== "GOOGLE_SHEET" || (assignment.sources[0].sheetId === sheetId && assignment.sources[0].sheetTab === sheetTab))) redirect("/dashboard/import?ok=source-unchanged");
   await getDb().$transaction(async (tx) => {
     await tx.attendanceSource.updateMany({ where: { assignmentId, active: true }, data: { active: false } });
     await tx.attendanceSource.create({ data: { assignmentId, kind, sheetId: kind === "GOOGLE_SHEET" ? sheetId : null, sheetTab: kind === "GOOGLE_SHEET" ? sheetTab : null } });
@@ -97,8 +92,11 @@ export async function uploadAttendance(formData: FormData) {
   const assignmentId = String(formData.get("assignmentId") ?? "");
   const { assignment, actorAuthId } = await teacherAssignment(assignmentId);
   const source = assignment.sources[0];
-  if (!source || source.kind !== "EXCEL") fail("Select Excel as the active attendance source first.");
-  const parsed = parseAttendanceRows(await workbook(formData));
+  if (!source || source.kind !== "CSV") fail("Select CSV as the active attendance source first.");
+  const file = formData.get("file");
+  if (!(file instanceof File) || !file.name.toLowerCase().endsWith(".csv")) fail("Choose an attendance .csv file.");
+  if (file.size < 1 || file.size > 2 * 1024 * 1024) fail("CSV must be between 1 byte and 2 MB.");
+  const parsed = parseAttendanceCsv(await file.text());
   const students = await roster(assignment);
   const unmapped = parsed.accepted.filter((row) => !students.has(`${row.facultyNo}|${row.enrolmentNo}`));
   if (!parsed.accepted.length || parsed.issues.length || unmapped.length) {
@@ -114,6 +112,7 @@ export async function uploadAttendance(formData: FormData) {
       subjectId: assignment.subjectId,
       termId: assignment.termId,
       sessionOn: new Date(`${row.sessionOn}T00:00:00Z`),
+      sessionNo: row.sessionNo,
       status: row.status,
       sourceId: source.id,
       batchId: batch.id,
@@ -160,6 +159,7 @@ export async function syncSheetAttendance(formData: FormData) {
       subjectId: assignment.subjectId,
       termId: assignment.termId,
       sessionOn: new Date(`${row.sessionOn}T00:00:00Z`),
+      sessionNo: row.sessionNo,
       status: row.status,
       sourceId: source.id,
       batchId: batch.id,
@@ -184,16 +184,17 @@ export async function releaseBatch(formData: FormData) {
       await tx.mark.updateMany({ where: { studentId: { in: rows.map((row) => row.studentId) }, subjectId: batch.assignment.subjectId, termId: batch.assignment.termId, status: "RELEASED" }, data: { status: "SUPERSEDED" } });
       await tx.mark.updateMany({ where: { batchId, status: "DRAFT" }, data: { status: "RELEASED", releasedAt: new Date() } });
     } else if (batch.kind === "ATTENDANCE") {
-      const rows = await tx.attendanceRecord.findMany({ where: { batchId }, select: { studentId: true, sessionOn: true, sourceId: true } });
+      const rows = await tx.attendanceRecord.findMany({ where: { batchId }, select: { studentId: true, sessionOn: true, sessionNo: true, sourceId: true } });
       const activeSource = await tx.attendanceSource.findFirst({ where: { assignmentId: batch.assignmentId, active: true } });
       if (!activeSource || rows.some((row) => row.sourceId !== activeSource.id)) throw new Error("Attendance source changed after the draft was created.");
-      const byDate = new Map<string, string[]>();
+      const bySession = new Map<string, string[]>();
       for (const row of rows) {
-        const date = row.sessionOn.toISOString().slice(0, 10);
-        byDate.set(date, [...(byDate.get(date) ?? []), row.studentId]);
+        const key = `${row.sessionOn.toISOString().slice(0, 10)}#${row.sessionNo}`;
+        bySession.set(key, [...(bySession.get(key) ?? []), row.studentId]);
       }
-      for (const [date, studentIds] of byDate) {
-        await tx.attendanceRecord.updateMany({ where: { studentId: { in: studentIds }, subjectId: batch.assignment.subjectId, termId: batch.assignment.termId, sessionOn: new Date(`${date}T00:00:00Z`), recordStatus: "RELEASED" }, data: { recordStatus: "SUPERSEDED" } });
+      for (const [key, studentIds] of bySession) {
+        const [date, session] = key.split("#");
+        await tx.attendanceRecord.updateMany({ where: { studentId: { in: studentIds }, subjectId: batch.assignment.subjectId, termId: batch.assignment.termId, sessionOn: new Date(`${date}T00:00:00Z`), sessionNo: Number(session), recordStatus: "RELEASED" }, data: { recordStatus: "SUPERSEDED" } });
       }
       await tx.attendanceRecord.updateMany({ where: { batchId, recordStatus: "DRAFT" }, data: { recordStatus: "RELEASED", releasedAt: new Date() } });
     } else fail("Unknown batch kind.");

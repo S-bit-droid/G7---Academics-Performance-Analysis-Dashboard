@@ -26,7 +26,7 @@ export function isAccountRole(value: string): value is AccountRole {
   return accountRoles.includes(value as AccountRole);
 }
 
-function tableFromCsv(input: string): { cells: string[][]; lines: number[]; error?: string } {
+export function tableFromCsv(input: string): { cells: string[][]; lines: number[]; error?: string } {
   const text = input.replace(/^\uFEFF/, "");
   const cells: string[][] = [];
   const lines: number[] = [];

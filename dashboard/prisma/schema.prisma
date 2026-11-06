@@ -26,6 +26,7 @@ enum RecordStatus {
 enum AttendanceKind {
   GOOGLE_SHEET
   EXCEL
+  CSV
 }
 
 enum AttendanceStatus {
@@ -52,6 +53,7 @@ enum EventKind {
   ASSIGNMENT
   QUIZ
   DEPARTMENT
+  SEMINAR
 }
 
 model Department {
@@ -62,6 +64,7 @@ model Department {
   teachers   Teacher[]
   hod        HOD?
   events     CalendarEvent[]
+  timetables Timetable[]
 }
 
 model Programme {
@@ -74,6 +77,7 @@ model Programme {
   subjects     Subject[]
   students     Student[]
   terms        Term[]
+  timetables   Timetable[]
 }
 
 model Term {
@@ -89,6 +93,7 @@ model Term {
   attendance  AttendanceRecord[]
   quizzes     Quiz[]
   events      CalendarEvent[]
+  timetables  Timetable[]
 
   @@unique([programmeId, label])
 }
@@ -123,6 +128,7 @@ model Student {
   highSchool     String?
   intermediate   String?
   bachelors      String?
+  branch         String?
   interests      String[]           @default([])
   enrolments     Enrolment[]
   marks          Mark[]
@@ -131,6 +137,8 @@ model Student {
   work           StudentWork[]
   questions      QuestionThread[]
   notices        Notification[]
+  submissions    AssignmentSubmission[]
+  monthlyReports MonthlyReport[]
   createdAt      DateTime           @default(now())
 }
 
@@ -187,6 +195,7 @@ model TeachingAssignment {
   term         Term             @relation(fields: [termId], references: [id])
   sources      AttendanceSource[]
   imports      ImportBatch[]
+  materials    TeachingMaterial[]
 
   @@unique([teacherId, subjectId, termId, section])
   @@index([subjectId, termId, section])
@@ -253,6 +262,7 @@ model AttendanceRecord {
   subjectId String
   termId    String
   sessionOn DateTime         @db.Date
+  sessionNo Int              @default(1)
   status    AttendanceStatus
   recordStatus RecordStatus @default(DRAFT)
   releasedAt DateTime?
@@ -266,8 +276,8 @@ model AttendanceRecord {
   batch     ImportBatch?      @relation(fields: [batchId], references: [id])
   updatedAt DateTime         @updatedAt
 
-  @@unique([studentId, subjectId, termId, sessionOn, version])
-  @@index([subjectId, termId, sessionOn])
+  @@unique([studentId, subjectId, termId, sessionOn, sessionNo, version], map: "AttendanceRecord_student_subject_term_date_session_version_key")
+  @@index([subjectId, termId, sessionOn, sessionNo])
   @@index([studentId, recordStatus])
 }
 
@@ -276,10 +286,14 @@ model Quiz {
   subjectId    String
   termId       String
   teacherId    String
+  section      String?
   title        String
   timerSeconds Int
   questions    Json
   publishedAt  DateTime?
+  availableUntil DateTime?
+  attendanceOn DateTime? @db.Date
+  attendanceSessionNo Int?
   subject      Subject       @relation(fields: [subjectId], references: [id])
   term         Term          @relation(fields: [termId], references: [id])
   teacher      Teacher       @relation(fields: [teacherId], references: [id])
@@ -294,10 +308,24 @@ model QuizAttempt {
   submittedAt DateTime?
   answers     Json?
   score       Int?
+  timedOut    Boolean   @default(false)
+  lastSeenAt  DateTime?
   quiz        Quiz      @relation(fields: [quizId], references: [id])
   student     Student   @relation(fields: [studentId], references: [id])
+  activityEvents QuizActivityEvent[]
 
-  @@index([quizId, studentId])
+  @@unique([quizId, studentId])
+}
+
+model QuizActivityEvent {
+  id              String      @id @default(cuid())
+  attemptId       String
+  type            String
+  durationSeconds Int?
+  receivedAt      DateTime    @default(now())
+  attempt         QuizAttempt @relation(fields: [attemptId], references: [id])
+
+  @@index([attemptId, receivedAt])
 }
 
 model StudentWork {
@@ -348,11 +376,67 @@ model CalendarEvent {
   departmentId    String?
   subjectId       String?
   termId          String?
+  section         String?
   department      Department?  @relation(fields: [departmentId], references: [id])
   subject         Subject?     @relation(fields: [subjectId], references: [id])
   term            Term?        @relation(fields: [termId], references: [id])
   notices         Notification[]
   createdAt       DateTime     @default(now())
+}
+
+model Timetable {
+  id              String     @id @default(cuid())
+  departmentId    String
+  programmeId     String
+  termId          String
+  section         String
+  title           String
+  storagePath     String
+  issuedByAuthId  String
+  issuedAt        DateTime   @default(now())
+  department      Department @relation(fields: [departmentId], references: [id])
+  programme       Programme  @relation(fields: [programmeId], references: [id])
+  term            Term       @relation(fields: [termId], references: [id])
+
+  @@index([programmeId, termId, section, issuedAt])
+}
+
+model TeachingMaterial {
+  id           String           @id @default(cuid())
+  assignmentId String
+  kind         String
+  title        String
+  description  String?
+  storagePath  String?
+  dueAt        DateTime?
+  createdAt    DateTime         @default(now())
+  assignment   TeachingAssignment @relation(fields: [assignmentId], references: [id])
+  submissions  AssignmentSubmission[]
+
+  @@index([assignmentId, createdAt])
+}
+
+model AssignmentSubmission {
+  id          String           @id @default(cuid())
+  materialId  String
+  studentId   String
+  storagePath String
+  submittedAt DateTime         @default(now())
+  material    TeachingMaterial @relation(fields: [materialId], references: [id])
+  student     Student          @relation(fields: [studentId], references: [id])
+
+  @@unique([materialId, studentId])
+}
+
+model MonthlyReport {
+  id          String   @id @default(cuid())
+  studentId   String
+  month       String
+  summary     Json
+  generatedAt DateTime @default(now())
+  student     Student  @relation(fields: [studentId], references: [id])
+
+  @@unique([studentId, month])
 }
 
 model Notification {

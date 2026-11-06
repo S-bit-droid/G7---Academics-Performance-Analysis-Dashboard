@@ -1,40 +1,41 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import { roleForAuthUser } from "@/lib/access";
+import { academicTimeInput, formatAcademicTime } from "@/lib/academic-time";
 import { getDb } from "@/lib/db";
-import { createClient } from "@/lib/supabase/server";
+import { requireHod } from "@/lib/hod-access";
+import { privateFileUrl } from "@/lib/private-files";
 import { AssignmentForm } from "./assignment-form";
+import { issueTimetable, saveDepartmentEvent } from "./actions";
 
 export const dynamic = "force-dynamic";
+const field = "mt-1 w-full rounded-lg border border-white/20 bg-[#0a1220] px-3 py-2 text-sm";
+const panel = "rounded-2xl border border-white/10 bg-[#101e30] p-6";
 
-export default async function HodAssignmentsPage() {
-  const supabase = await createClient();
-  const { data } = await supabase.auth.getClaims();
-  if (!data?.claims?.sub) redirect("/login");
-  const role = await roleForAuthUser(data.claims.sub);
-  if (role?.kind !== "HOD") redirect("/dashboard");
-
+export default async function HodPage() {
+  const hod = await requireHod();
   const db = getDb();
-  const hod = await db.hOD.findUnique({ where: { id: role.id }, include: { department: true } });
-  if (!hod) redirect("/dashboard");
   const departmentId = hod.departmentId;
-  const [teachers, subjects, terms, assignments] = await Promise.all([
-    db.teacher.findMany({ where: { departmentId }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+  const [programmes, teachers, students, subjects, terms, assignments, events, timetables, ownTeacher] = await Promise.all([
+    db.programme.findMany({ where: { departmentId }, include: { _count: { select: { students: true, subjects: true } } }, orderBy: { code: "asc" } }),
+    db.teacher.findMany({ where: { departmentId }, select: { id: true, authUserId: true, name: true, _count: { select: { assignments: true } } }, orderBy: { name: "asc" } }),
+    db.student.findMany({ where: { programme: { departmentId } }, include: { programme: true }, orderBy: { name: "asc" } }),
     db.subject.findMany({ where: { programme: { departmentId } }, select: { id: true, name: true, programmeId: true, programme: { select: { code: true } } }, orderBy: { name: "asc" } }),
     db.term.findMany({ where: { programme: { departmentId } }, select: { id: true, label: true, programmeId: true }, orderBy: { startsOn: "desc" } }),
     db.teachingAssignment.findMany({ where: { teacher: { departmentId }, subject: { programme: { departmentId } } }, include: { teacher: true, subject: { include: { programme: true } }, term: true }, orderBy: { subject: { name: "asc" } } }),
+    db.calendarEvent.findMany({ where: { departmentId, subjectId: null }, orderBy: { startsAt: "asc" }, take: 60 }),
+    db.timetable.findMany({ where: { departmentId }, include: { programme: true, term: true }, orderBy: { issuedAt: "desc" }, take: 30 }),
+    db.teacher.findUnique({ where: { authUserId: hod.authUserId }, select: { id: true } }),
   ]);
-
-  return <main className="min-h-screen bg-[#0a1220] px-6 py-8 text-slate-100"><div className="mx-auto max-w-6xl">
-    <Link href="/dashboard" className="text-sm text-cyan-300 hover:underline">← Dashboard</Link>
-    <h1 className="mt-6 text-3xl font-semibold">Teaching assignments</h1>
-    <p className="mt-2 text-sm text-slate-400">{hod.department.name}. Assign a Teacher to a subject, term and section in your department.</p>
-    <section className="mt-8 rounded-2xl border border-white/10 bg-[#101e30] p-6"><h2 className="text-lg font-semibold">Assign Teacher</h2>
-      <AssignmentForm teachers={teachers} subjects={subjects} terms={terms} />
-    </section>
-    <section className="mt-8 rounded-2xl border border-white/10 bg-[#101e30] p-6"><h2 className="text-lg font-semibold">Current assignments</h2>
-      {assignments.length === 0 ? <p className="mt-4 text-sm text-slate-400">No teaching groups assigned yet.</p> :
-        <div className="mt-5 overflow-x-auto"><table className="w-full min-w-[560px] text-left text-sm"><thead className="text-slate-400"><tr><th className="pb-3">Teacher</th><th className="pb-3">Subject</th><th className="pb-3">Term</th><th className="pb-3">Section</th></tr></thead><tbody>{assignments.map((assignment) => <tr key={assignment.id} className="border-t border-white/10"><td className="py-3">{assignment.teacher.name}</td><td className="py-3">{assignment.subject.programme.code} · {assignment.subject.name}</td><td className="py-3">{assignment.term.label}</td><td className="py-3">{assignment.section}</td></tr>)}</tbody></table></div>}
-    </section>
+  const timetableFiles = await Promise.all(timetables.map(async (item) => ({ ...item, url: await privateFileUrl(item.storagePath) })));
+  const ownGroups = assignments.filter((item) => item.teacherId === ownTeacher?.id);
+  return <main className="min-h-screen bg-[#0a1220] px-6 py-8 text-slate-100"><div className="mx-auto max-w-6xl space-y-8">
+    <div><Link href="/dashboard" className="text-sm text-cyan-300">← Dashboard</Link><h1 className="mt-6 text-3xl font-semibold">{hod.department.name}</h1><p className="mt-2 text-sm text-slate-400">Department workspace. Academic records outside your own assigned classes are read-only.</p></div>
+    <div className="grid gap-4 sm:grid-cols-3">{[["Programmes", programmes.length], ["Students", students.length], ["Teaching staff", teachers.length]].map(([label, count]) => <div key={label} className={panel}><p className="text-sm text-slate-400">{label}</p><p className="mt-2 text-3xl font-semibold text-cyan-300">{count}</p></div>)}</div>
+    <section className={panel}><h2 className="text-xl font-semibold">My teaching</h2><p className="mt-2 text-sm text-slate-400">Teacher tools are available for classes assigned to you.</p><div className="mt-4 flex flex-wrap gap-3"><Link href="/dashboard/teacher" className="rounded-lg bg-cyan-400 px-4 py-2 text-sm font-semibold text-[#0a1220]">Teacher workspace</Link><Link href="/dashboard/import" className="rounded-lg border border-cyan-300 px-4 py-2 text-sm text-cyan-200">Marks and attendance imports</Link></div>{ownGroups.length > 0 && <p className="mt-4 text-sm">{ownGroups.map((item) => item.subject.name + " · " + item.section).join(", ")}</p>}</section>
+    <section className={panel}><h2 className="text-xl font-semibold">Programmes</h2><div className="mt-4 grid gap-3 sm:grid-cols-2">{programmes.map((item) => <div key={item.id} className="rounded-lg border border-white/10 p-4"><p className="font-semibold">{item.code} · {item.name}</p><p className="mt-1 text-sm text-slate-400">{item.level} · {item._count.subjects} subjects · {item._count.students} students</p></div>)}</div></section>
+    <div className="grid gap-6 lg:grid-cols-2"><section className={panel}><h2 className="text-xl font-semibold">Teachers</h2><div className="mt-4 space-y-2">{teachers.map((item) => <Link key={item.id} href={`/dashboard/hod/teacher/${item.id}`} className="block rounded-lg border border-white/10 p-3 text-sm hover:border-cyan-300/50">{item.name}{item.authUserId === hod.authUserId ? " (you)" : ""} <span className="text-slate-400">· {item._count.assignments} groups</span></Link>)}</div></section>
+      <section className={panel}><h2 className="text-xl font-semibold">Students</h2><div className="mt-4 max-h-96 space-y-2 overflow-y-auto">{students.map((item) => <Link key={item.id} href={`/dashboard/hod/student/${item.id}`} className="block rounded-lg border border-white/10 p-3 text-sm hover:border-cyan-300/50">{item.name} <span className="text-slate-400">· {item.facultyNo} · {item.programme.code}</span></Link>)}</div></section></div>
+    <section className={panel}><h2 className="text-xl font-semibold">Assign Teachers</h2><p className="mt-2 text-sm text-slate-400">Choose a subject, term and section in this department.</p><AssignmentForm teachers={teachers} subjects={subjects} terms={terms} /><div className="mt-6 overflow-x-auto"><table className="w-full min-w-[560px] text-left text-sm"><thead className="text-slate-400"><tr><th className="pb-3">Teacher</th><th>Subject</th><th>Term</th><th>Section</th></tr></thead><tbody>{assignments.map((item) => <tr key={item.id} className="border-t border-white/10"><td className="py-3"><Link href={`/dashboard/hod/teacher/${item.teacherId}`} className="text-cyan-300">{item.teacher.name}</Link></td><td>{item.subject.programme.code} · {item.subject.name}</td><td>{item.term.label}</td><td>{item.section}</td></tr>)}</tbody></table></div></section>
+    <div className="grid gap-6 lg:grid-cols-2"><section className={panel}><h2 className="text-xl font-semibold">Issue timetable</h2><p className="mt-2 text-sm text-slate-400">Publish a PDF for one programme, term and section. New versions remain in the history below.</p><form action={issueTimetable} className="mt-4 space-y-3"><label className="block text-sm">Programme<select name="programmeId" required className={field}><option value="">Choose programme</option>{programmes.map((item) => <option key={item.id} value={item.id}>{item.code} · {item.name}</option>)}</select></label><label className="block text-sm">Term<select name="termId" required className={field}><option value="">Choose term</option>{terms.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label><label className="block text-sm">Section<input name="section" required maxLength={20} placeholder="A" className={field} /></label><label className="block text-sm">Title<input name="title" required maxLength={120} placeholder="Semester timetable" className={field} /></label><label className="block text-sm">PDF, up to 2 MB<input name="file" type="file" accept=".pdf,application/pdf" required className={field} /></label><button className="rounded-lg bg-cyan-400 px-4 py-2 text-sm font-semibold text-[#0a1220]">Issue timetable</button></form><div className="mt-5 space-y-2">{timetableFiles.map((item) => <p key={item.id} className="rounded-lg border border-white/10 p-3 text-sm">{item.title} · {item.programme.code} · {item.term.label} · {item.section} <span className="text-slate-400">· {item.issuedAt.toLocaleDateString("en-IN")}</span>{item.url && <a href={item.url} className="ml-3 text-cyan-300">Download</a>}</p>)}</div></section>
+      <section className={panel}><h2 className="text-xl font-semibold">Department calendar</h2><p className="mt-2 text-sm text-slate-400">Publish a sessional, event or seminar for all Students in the department.</p><form action={saveDepartmentEvent} className="mt-4 space-y-3"><label className="block text-sm">Type<select name="kind" className={field}><option value="SESSIONAL">Sessional</option><option value="DEPARTMENT">Event</option><option value="SEMINAR">Seminar</option></select></label><label className="block text-sm">Title<input name="title" required maxLength={120} className={field} /></label><label className="block text-sm">Date and time<input name="startsAt" type="datetime-local" required className={field} /></label><button className="rounded-lg bg-cyan-400 px-4 py-2 text-sm font-semibold text-[#0a1220]">Publish event</button></form><div className="mt-5 space-y-3">{events.map((item) => item.createdByAuthId === hod.authUserId ? <form key={item.id} action={saveDepartmentEvent} className="rounded-lg border border-white/10 p-3"><input type="hidden" name="eventId" value={item.id} /><select name="kind" defaultValue={item.kind} className={field}><option value="SESSIONAL">Sessional</option><option value="DEPARTMENT">Event</option><option value="SEMINAR">Seminar</option></select><input name="title" defaultValue={item.title} required maxLength={120} className={field} /><input name="startsAt" type="datetime-local" defaultValue={academicTimeInput(item.startsAt)} required className={field} /><button className="mt-2 text-sm text-cyan-300">Save changes</button></form> : <p key={item.id} className="rounded-lg border border-white/10 p-3 text-sm">{item.title} · {formatAcademicTime(item.startsAt)}</p>)}</div></section></div>
   </div></main>;
 }

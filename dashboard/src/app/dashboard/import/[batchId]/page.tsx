@@ -1,8 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { roleForAuthUser } from "@/lib/access";
 import { getDb } from "@/lib/db";
-import { createClient } from "@/lib/supabase/server";
+import { requireTeacher } from "@/lib/teacher-access";
 import { releaseBatch } from "../actions";
 
 export const dynamic = "force-dynamic";
@@ -10,13 +9,9 @@ const pageSize = 100;
 
 export default async function ImportReview({ params, searchParams }: { params: Promise<{ batchId: string }>; searchParams: Promise<{ page?: string }> }) {
   if (!process.env.DATABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY) redirect("/dashboard");
-  const supabase = await createClient();
-  const { data } = await supabase.auth.getClaims();
-  if (!data?.claims?.sub) redirect("/login");
-  const role = await roleForAuthUser(data.claims.sub);
-  if (role?.kind !== "TEACHER") redirect("/dashboard");
+  const teacher = await requireTeacher();
   const { batchId } = await params;
-  const batch = await getDb().importBatch.findFirst({ where: { id: batchId, assignment: { teacherId: role.id } }, include: { assignment: { include: { subject: true, term: true } } } });
+  const batch = await getDb().importBatch.findFirst({ where: { id: batchId, assignment: { teacherId: teacher.teacherId } }, include: { assignment: { include: { subject: true, term: true } } } });
   if (!batch) notFound();
   const inputPage = Number((await searchParams).page ?? "1");
   const page = Number.isSafeInteger(inputPage) && inputPage > 0 ? inputPage : 1;

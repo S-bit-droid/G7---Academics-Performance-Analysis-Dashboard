@@ -1,4 +1,5 @@
 import { combinedSessional, type CombinedRule } from "./academic";
+import { tableFromCsv } from "./admin-accounts";
 
 export type Cell = string | number | boolean | Date | null | undefined;
 export type Row = Cell[];
@@ -19,6 +20,7 @@ export type AttendanceRow = {
   enrolmentNo: string;
   name: string;
   sessionOn: string;
+  sessionNo: number;
   status: "PRESENT" | "ABSENT" | "UNRECORDED";
 };
 
@@ -93,22 +95,34 @@ function dateCell(value: Cell): string | null {
   return Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== iso ? null : iso;
 }
 
+function attendanceColumn(value: Cell) {
+  const raw = text(value);
+  const match = /^(.*?)(?:\s*#([1-9]|1\d|20))?$/.exec(raw);
+  if (!match) return null;
+  const date = dateCell(value instanceof Date ? value : match[1].trim());
+  return date ? { date, sessionNo: match[2] ? Number(match[2]) : 1 } : null;
+}
+
 export function parseAttendanceRows(rows: Row[]) {
   const header = findHeader(rows, ["facultyNo", "enrolmentNo", "name"]);
   if (!header) return { accepted: [] as AttendanceRow[], issues: [{ row: 0, message: "Required attendance columns were not found" }] as ImportIssue[] };
   const reserved = new Set(Object.values(header.positions).filter((position) => position >= 0));
-  const dates = header.index >= 0 ? rows[header.index].map((value, column) => ({ column, date: reserved.has(column) ? null : dateCell(value) })).filter((item) => item.date) : [];
+  const dates = rows[header.index].flatMap((value, column) => {
+    const session = reserved.has(column) ? null : attendanceColumn(value);
+    return session ? [{ column, ...session }] : [];
+  });
   const accepted: AttendanceRow[] = [];
   const issues: ImportIssue[] = [];
   rows[header.index].forEach((value, column) => {
     if (reserved.has(column) || !text(value) || ["serialno", "serialnumber", "sno"].includes(normal(value))) return;
-    if (!dateCell(value)) issues.push({ row: header.index + 1, message: `Unrecognised date column: ${text(value)}` });
+    if (!attendanceColumn(value)) issues.push({ row: header.index + 1, message: `Unrecognised date column: ${text(value)}` });
   });
   if (dates.length === 0) issues.push({ row: header.index + 1, message: "No valid date columns found" });
   const uniqueDates = new Set<string>();
   for (const item of dates) {
-    if (uniqueDates.has(item.date!)) issues.push({ row: header.index + 1, message: `Duplicate date column: ${item.date}` });
-    uniqueDates.add(item.date!);
+    const key = `${item.date}#${item.sessionNo}`;
+    if (uniqueDates.has(key)) issues.push({ row: header.index + 1, message: `Duplicate date and session column: ${key}` });
+    uniqueDates.add(key);
   }
   const seen = new Set<string>();
   for (let i = header.index + 1; i < rows.length; i++) {
@@ -122,15 +136,25 @@ export function parseAttendanceRows(rows: Row[]) {
     const key = `${facultyNo}|${enrolmentNo}`;
     if (seen.has(key)) { issues.push({ row, message: "Duplicate student identifiers" }); continue; }
     seen.add(key);
-    for (const { column, date } of dates) {
+    for (const { column, date, sessionNo } of dates) {
       const value = normal(cells[column]);
       if (!value) {
-        accepted.push({ row, facultyNo, enrolmentNo, name, sessionOn: date!, status: "UNRECORDED" });
+        accepted.push({ row, facultyNo, enrolmentNo, name, sessionOn: date, sessionNo, status: "UNRECORDED" });
         continue;
       }
       if (value !== "p" && value !== "present" && value !== "a" && value !== "absent") { issues.push({ row, message: `Unrecognised attendance value for ${date}` }); continue; }
-      accepted.push({ row, facultyNo, enrolmentNo, name, sessionOn: date!, status: value === "p" || value === "present" ? "PRESENT" : "ABSENT" });
+      accepted.push({ row, facultyNo, enrolmentNo, name, sessionOn: date, sessionNo, status: value === "p" || value === "present" ? "PRESENT" : "ABSENT" });
     }
   }
   return { accepted, issues };
+}
+
+export function parseAttendanceCsv(input: string) {
+  const parsed = tableFromCsv(input);
+  if (parsed.error) return { accepted: [] as AttendanceRow[], issues: [{ row: 0, message: parsed.error }] };
+  if (!parsed.cells.length) return { accepted: [] as AttendanceRow[], issues: [{ row: 0, message: "The CSV is empty" }] };
+  const columns = parsed.cells[0].length;
+  const invalid = parsed.cells.findIndex((row) => row.length !== columns);
+  if (invalid >= 0) return { accepted: [] as AttendanceRow[], issues: [{ row: parsed.lines[invalid], message: "Inconsistent CSV column count" }] };
+  return parseAttendanceRows(parsed.cells);
 }

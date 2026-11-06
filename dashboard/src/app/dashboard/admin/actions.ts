@@ -74,7 +74,10 @@ async function createRoleRecord(role: AccountRole, row: AccountInput, authUserId
   } else if (role === "TEACHER" || role === "HOD") {
     const department = await db.department.findUniqueOrThrow({ where: { code: row.departmentCode! } });
     if (role === "TEACHER") await db.teacher.create({ data: { authUserId, name: row.name, departmentId: department.id } });
-    else await db.hOD.create({ data: { authUserId, name: row.name, departmentId: department.id } });
+    else await db.$transaction([
+      db.hOD.create({ data: { authUserId, name: row.name, departmentId: department.id } }),
+      db.teacher.create({ data: { authUserId, name: row.name, departmentId: department.id } }),
+    ]);
   } else {
     await db.admin.create({ data: { authUserId, name: row.name } });
   }
