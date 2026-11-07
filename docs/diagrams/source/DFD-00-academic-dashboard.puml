@@ -1,0 +1,84 @@
+@startuml
+' DFD Level 0. Detailed validation and role decisions belong to Level 1.
+top to bottom direction
+skinparam shadowing false
+skinparam linetype polyline
+skinparam nodesep 65
+skinparam ranksep 85
+skinparam defaultFontName Arial
+skinparam defaultFontSize 14
+skinparam ArrowColor #333333
+skinparam RectangleBorderColor #333333
+skinparam UsecaseBorderColor #333333
+skinparam UsecaseBackgroundColor #FFFFFF
+skinparam RectangleBackgroundColor #FFFFFF
+
+rectangle "Admin" as Admin
+rectangle "Teacher" as Teacher
+rectangle "Google Sheets" as Sheets
+rectangle "Student" as Student
+rectangle "HOD" as HOD
+
+usecase "P1\nAccess and setup" as P1
+usecase "P2\nEvidence collection" as P2
+usecase "P4\nLearning and communication" as P4
+usecase "P3\nAnalytics and reports" as P3
+
+rectangle "D1: Academic structure\nand profiles" as D1
+rectangle "D2: Marks and\nattendance" as D2
+rectangle "D3: Quizzes and\nacademic work" as D3
+rectangle "D4: Events, messages\nand notices" as D4
+
+' Invisible edges keep entities, processes and stores in three readable rows.
+Admin -[hidden]right-> Teacher
+Teacher -[hidden]right-> Sheets
+Sheets -[hidden]right-> Student
+Student -[hidden]right-> HOD
+P1 -[hidden]right-> P2
+P2 -[hidden]right-> P4
+P4 -[hidden]right-> P3
+D1 -[hidden]right-> D2
+D2 -[hidden]right-> D3
+D3 -[hidden]right-> D4
+Admin -[hidden]down-> P1
+P1 -[hidden]down-> D1
+
+' Admin setup and access. HOD is an appointed Teacher, not a separate account type.
+Admin --> P1 : Account, department and HOD setup
+P1 --> Admin : Setup and access status
+P1 --> D1 : Accounts, roles and academic structure
+D1 --> P1 : Account and scope records
+
+' Collection of academic evidence.
+Teacher --> P2 : Marks workbook or attendance CSV
+Sheets --> P2 : Attendance rows
+Student --> P2 : Background and achievements
+D1 --> P2 : Teaching and enrolment scope
+P2 --> Teacher : Validation and release result
+P2 --> D1 : Profile updates
+P2 --> D2 : Validated marks and attendance
+P2 --> D3 : Achievements and scored quiz outcomes
+
+' Quizzes, coursework, schedules and feedback.
+Teacher --> P4 : Quizzes, coursework, calendar and replies
+Student --> P4 : Attempts, submissions and questions
+HOD --> P4 : Timetable and department events
+P4 --> D3 : Quiz and coursework records
+P4 --> D4 : Events, feedback and notices
+D3 --> P4 : Published learning records
+D4 --> P4 : Current events and messages
+P4 --> Student : Learning items and notices
+P4 --> Teacher : Submissions and questions
+P4 --> HOD : Event and timetable status
+P4 --> P2 : Scored quiz outcomes
+
+' Scoped analytics and reports. No HOD mark-approval step is implied.
+D1 --> P3 : Profiles and authorised scope
+D2 --> P3 : Released marks and attendance
+D3 --> P3 : Quiz outcomes and work evidence
+P3 --> Student : Progress, warnings and monthly report
+P3 --> Teacher : Class and student reports
+P3 --> HOD : Department indicators and reports
+P3 --> P4 : Alert triggers
+
+@enduml

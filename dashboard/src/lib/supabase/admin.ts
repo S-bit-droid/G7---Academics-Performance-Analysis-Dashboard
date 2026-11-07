@@ -25,14 +25,3 @@ export async function listAuthUsers(): Promise<AuthUserSummary[]> {
   }
   throw new Error("Account list exceeds the current 10,000-user review limit.");
 }
-
-export function inviteRedirectUrl() {
-  const base = process.env.APP_BASE_URL
-    ?? (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : undefined)
-    ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined)
-    ?? (process.env.NODE_ENV === "development" ? "http://localhost:3000" : undefined);
-  if (!base) throw new Error("Set APP_BASE_URL before sending invitations.");
-  const url = new URL(base);
-  if (url.protocol !== "https:" && url.hostname !== "localhost") throw new Error("APP_BASE_URL must be HTTPS.");
-  return new URL("/auth/confirm", url).toString();
-}

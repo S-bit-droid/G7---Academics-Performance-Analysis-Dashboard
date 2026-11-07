@@ -36,7 +36,6 @@ export default async function AdminPage() {
     db.quizAttempt.count({ where: { startedAt: { gte: since } } }),
   ]);
 
-  const inviteReady = process.env.AUTH_INVITE_TEMPLATE_READY === "true";
   let authUsers: Awaited<ReturnType<typeof listAuthUsers>> = [];
   let authError = "";
   try { authUsers = await listAuthUsers(); }
@@ -51,9 +50,8 @@ export default async function AdminPage() {
   ].sort((a, b) => a.name.localeCompare(b.name));
   const recentSignIns = authUsers.filter((user) => user.lastSignInAt && new Date(user.lastSignInAt) >= since).length;
 
-  return <main className="min-h-screen bg-[#0a1220] px-6 py-8 text-slate-100"><div className="mx-auto max-w-7xl"><Link href="/dashboard" className="text-sm text-cyan-300 hover:underline">← Dashboard</Link><h1 className="mt-6 text-3xl font-semibold">Admin accounts</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">Create role accounts, send invitations and review basic activity. Academic marks and attendance remain with the assigned teaching staff.</p>
+  return <main className="min-h-screen bg-[#0a1220] px-6 py-8 text-slate-100"><div className="mx-auto max-w-7xl"><Link href="/dashboard" className="text-sm text-cyan-300 hover:underline">← Dashboard</Link><h1 className="mt-6 text-3xl font-semibold">Admin accounts</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">Create role accounts and review basic activity. Academic marks and attendance remain with the assigned teaching staff.</p>
     {authError && <p role="alert" className="mt-6 rounded-lg border border-amber-300/30 bg-amber-300/10 p-4 text-sm text-amber-200">{authError} Account creation is unavailable until the server key is configured.</p>}
-    {!authError && !inviteReady && <p role="alert" className="mt-6 rounded-lg border border-amber-300/30 bg-amber-300/10 p-4 text-sm text-amber-200">Invite emails need the Supabase invite template and AUTH_INVITE_TEMPLATE_READY=true before accounts can be created.</p>}
     <div className="mt-8 grid gap-4 sm:grid-cols-3">{[["Recent sign-ins", recentSignIns], ["Academic imports", imports], ["Quiz attempts", attempts]].map(([label, count]) => <div key={label} className="rounded-xl border border-white/10 bg-[#101e30] p-5"><p className="text-sm text-slate-400">{label} · last 7 days</p><p className="mt-2 text-3xl font-semibold text-cyan-300">{authError && label === "Recent sign-ins" ? "Unavailable" : count}</p></div>)}</div>
     {!authError && <div className="mt-8"><AccountForms departments={departments} programmes={programmes} /></div>}
     <HodAppointmentForm departments={departments} teachers={teachers} />

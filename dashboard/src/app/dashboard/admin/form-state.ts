@@ -1,6 +1,6 @@
 export type ProvisionState = {
   message: string;
-  results: { line: number; email: string; outcome: string }[];
+  results: { line: number; email: string; outcome: string; initialPassword?: string }[];
 };
 
 export const emptyProvisionState: ProvisionState = { message: "", results: [] };
